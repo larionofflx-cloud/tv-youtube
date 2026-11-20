@@ -67,6 +67,7 @@
   "use strict";
 
   var API = "https://api.piped.private.coffee";
+  var API_FALLBACK = "https://pipedapi.ducks.party";
   var app = document.getElementById("app");
   var searchForm = document.getElementById("search-form");
   var searchInput = document.getElementById("q");
@@ -85,13 +86,27 @@
 
   function setError(text) {
     app.innerHTML = "";
-    app.appendChild(el("div", "error", text));
+    var box = el("div", "error", text);
+    app.appendChild(box);
+    var retry = el("button", null, "Обновить");
+    retry.style.marginTop = "16px";
+    retry.addEventListener("click", function () { location.reload(); });
+    app.appendChild(retry);
+  }
+
+  function apiGetOnce(base, path) {
+    return fetch(base + path, { cache: "no-store" }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
   }
 
   function apiGet(path) {
-    return fetch(API + path, { cache: "no-store" }).then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
+    return apiGetOnce(API, path).catch(function (firstError) {
+      if (!API_FALLBACK) throw firstError;
+      return apiGetOnce(API_FALLBACK, path).catch(function () {
+        throw firstError;
+      });
     });
   }
 
