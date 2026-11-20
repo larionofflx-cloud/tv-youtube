@@ -79,6 +79,18 @@
     return n;
   }
 
+  function humanError(e) {
+    var msg = String((e && e.message) || e || "");
+    if (msg.indexOf("HTTP 5") === 0) {
+      return "Сервер-посредник сейчас не может получить это видео: YouTube ограничил ему доступ.\n" +
+        "Попробуйте другое видео или повторите через несколько минут.";
+    }
+    if (msg.indexOf("HTTP 4") === 0) {
+      return "Это видео недоступно (сервер ответил " + msg + "). Попробуйте другое.";
+    }
+    return "Не удалось связаться с сервером данных.\nПроверьте подключение к интернету и нажмите «Обновить».\n\n" + msg;
+  }
+
   function setStatus(text) {
     app.innerHTML = "";
     app.appendChild(el("div", "status", text));
@@ -172,7 +184,7 @@
     apiGet("/trending?region=RU").then(function (items) {
       renderList("Тренды", items);
     }).catch(function (e) {
-      setError("Не удалось загрузить список видео.\n" + e.message);
+      setError(humanError(e));
     });
   }
 
@@ -181,7 +193,7 @@
     apiGet("/search?q=" + encodeURIComponent(query) + "&filter=videos").then(function (data) {
       renderList("Результаты: " + query, data.items || []);
     }).catch(function (e) {
-      setError("Поиск не удался.\n" + e.message);
+      setError(humanError(e));
     });
   }
 
@@ -293,7 +305,7 @@
         app.appendChild(row);
       }
     }).catch(function (e) {
-      setError("Не удалось получить видео.\n" + e.message);
+      setError(humanError(e));
     });
   }
 
