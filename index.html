@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YouTube для ТВ</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #0f0f0f; color: #f1f1f1;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  a { color: inherit; text-decoration: none; }
+  header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center;
+    gap: 16px; padding: 12px 24px; background: #161616; border-bottom: 1px solid #2a2a2a; }
+  .brand { font-size: 26px; font-weight: 700; white-space: nowrap; }
+  .brand span { color: #ff3b30; }
+  form { flex: 1; display: flex; gap: 10px; }
+  input[type=search] { flex: 1; font-size: 20px; padding: 10px 16px; border-radius: 24px;
+    border: 1px solid #3a3a3a; background: #0f0f0f; color: #fff; outline: none; }
+  input[type=search]:focus { border-color: #3ea6ff; }
+  button { font-size: 19px; padding: 10px 22px; border-radius: 24px; border: 0;
+    background: #272727; color: #fff; cursor: pointer; }
+  button:hover, button:focus { background: #3a3a3a; outline: 3px solid #3ea6ff; }
+  main { padding: 20px 24px 80px; }
+  h1 { font-size: 26px; margin: 8px 0 18px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 22px; }
+  .card { width: 320px; border-radius: 12px; padding: 8px; background: #171717; }
+  .card:hover, .card:focus { background: #242424; outline: 3px solid #3ea6ff; }
+  .thumb { position: relative; width: 100%; padding-top: 56.25%; background: #000;
+    border-radius: 8px; overflow: hidden; }
+  .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .dur { position: absolute; right: 6px; bottom: 6px; background: rgba(0,0,0,.8);
+    padding: 2px 7px; border-radius: 4px; font-size: 15px; }
+  .title { font-size: 18px; font-weight: 600; line-height: 1.3; margin: 10px 4px 4px;
+    max-height: 3.9em; overflow: hidden; }
+  .sub { font-size: 15px; color: #aaa; margin: 0 4px 6px; }
+  .status { font-size: 20px; color: #bbb; padding: 24px 4px; }
+  .error { font-size: 19px; color: #ff9a9a; padding: 16px; background: #2a1414;
+    border-radius: 10px; line-height: 1.4; }
+  .player-wrap { background: #000; border-radius: 12px; overflow: hidden; margin-bottom: 16px; }
+  video { width: 100%; max-height: 70vh; background: #000; display: block; }
+  .watch-title { font-size: 24px; font-weight: 700; margin: 6px 0 8px; }
+  .watch-meta { font-size: 16px; color: #aaa; margin-bottom: 14px; }
+  .desc { font-size: 16px; color: #ccc; white-space: pre-wrap; line-height: 1.45;
+    background: #171717; border-radius: 10px; padding: 14px; margin-bottom: 22px; max-height: 9em; overflow: auto; }
+  .back { display: inline-block; font-size: 18px; color: #3ea6ff; margin-bottom: 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 18px; }
+  .row .card { width: 260px; }
+  @media (max-width: 900px) {
+    .card { width: 46%; } .row .card { width: 46%; }
+    header { flex-wrap: wrap; padding: 10px 14px; } .brand { font-size: 22px; }
+    main { padding: 14px 14px 60px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="#/">You<span>Tube</span></a>
+  <form id="search-form" action="#/search">
+    <input id="q" type="search" placeholder="Поиск на YouTube" autocomplete="off">
+    <button type="submit">Найти</button>
+  </form>
+</header>
+<main id="app"><div class="status">Загрузка…</div></main>
+
+<script>
+(function () {
+  "use strict";
+
+  var API = "https://api.piped.private.coffee";
+  var app = document.getElementById("app");
+  var searchForm = document.getElementById("search-form");
+  var searchInput = document.getElementById("q");
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = text;
+    return n;
+  }
+
+  function setStatus(text) {
+    app.innerHTML = "";
+    app.appendChild(el("div", "status", text));
+  }
+
+  function setError(text) {
+    app.innerHTML = "";
+    app.appendChild(el("div", "error", text));
+  }
+
+  function apiGet(path) {
+    return fetch(API + path, { cache: "no-store" }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+  }
+
+  function fmtDuration(sec) {
+    if (!sec || sec <= 0) return "";
+    sec = Math.floor(sec);
+    var h = Math.floor(sec / 3600);
+    var m = Math.floor((sec % 3600) / 60);
+    var s = sec % 60;
+    function two(x) { return x < 10 ? "0" + x : String(x); }
+    if (h > 0) return h + ":" + two(m) + ":" + two(s);
+    return m + ":" + two(s);
+  }
+
+  function fmtCount(n) {
+    if (!n && n !== 0) return "";
+    n = Number(n);
+    if (n >= 1000000) return (Math.round(n / 100000) / 10) + " млн";
+    if (n >= 1000) return (Math.round(n / 100) / 10) + " тыс.";
+    return String(n);
+  }
+
+  function card(item) {
+    var a = el("a", "card");
+    a.href = "#" + (item.url || ("/watch?v=" + item.videoId));
+    var thumb = el("div", "thumb");
+    if (item.thumbnail) {
+      var img = el("img");
+      img.src = item.thumbnail;
+      img.alt = "";
+      img.loading = "lazy";
+      thumb.appendChild(img);
+    }
+    var dur = fmtDuration(item.duration);
+    if (dur) thumb.appendChild(el("span", "dur", dur));
+    a.appendChild(thumb);
+    a.appendChild(el("div", "title", item.title || "(без названия)"));
+    var sub = [];
+    if (item.uploaderName) sub.push(item.uploaderName);
+    if (item.views || item.views === 0) sub.push(fmtCount(item.views) + " просмотров");
+    if (item.uploadedDate) sub.push(item.uploadedDate);
+    if (item.uploaded) sub.push("");
+    a.appendChild(el("div", "sub", sub.join(" • ")));
+    return a;
+  }
+
+  function renderList(title, items) {
+    app.innerHTML = "";
+    app.appendChild(el("h1", null, title));
+    if (!items || !items.length) {
+      app.appendChild(el("div", "status", "Ничего не найдено."));
+      return;
+    }
+    var grid = el("div", "grid");
+    for (var i = 0; i < items.length; i++) {
+      if (items[i] && items[i].type === "stream") grid.appendChild(card(items[i]));
+    }
+    app.appendChild(grid);
+  }
+
+  function renderHome() {
+    setStatus("Загружаем тренды…");
+    apiGet("/trending?region=RU").then(function (items) {
+      renderList("Тренды", items);
+    }).catch(function (e) {
+      setError("Не удалось загрузить список видео.\n" + e.message);
+    });
+  }
+
+  function renderSearch(query) {
+    setStatus("Ищем «" + query + "»…");
+    apiGet("/search?q=" + encodeURIComponent(query) + "&filter=videos").then(function (data) {
+      renderList("Результаты: " + query, data.items || []);
+    }).catch(function (e) {
+      setError("Поиск не удался.\n" + e.message);
+    });
+  }
+
+  function pickStream(streams) {
+    var best = null;
+    var i, s;
+    for (i = 0; i < streams.length; i++) {
+      s = streams[i];
+      if (!s || !s.url) continue;
+      if (String(s.mimeType || "").indexOf("video/mp4") !== 0) continue;
+      if (s.videoOnly !== false) continue;
+      if (String(s.url).indexOf("videoplayback") < 0) continue;
+      if (!best) best = s;
+      else if ((s.quality || "").indexOf("720") >= 0) best = s;
+    }
+    return best;
+  }
+
+  function pickMutedVideo(streams) {
+    for (var i = 0; i < streams.length; i++) {
+      var s = streams[i];
+      if (s && s.url && String(s.mimeType || "").indexOf("video/mp4") === 0 &&
+          String(s.url).indexOf("videoplayback") >= 0) return s;
+    }
+    return null;
+  }
+
+  function pickAudio(audio) {
+    if (!audio || !audio.length) return null;
+    for (var i = 0; i < audio.length; i++) {
+      if (audio[i] && audio[i].url) return audio[i];
+    }
+    return null;
+  }
+
+  function renderWatch(id) {
+    setStatus("Готовим видео…");
+    apiGet("/streams/" + encodeURIComponent(id)).then(function (data) {
+      app.innerHTML = "";
+
+      var back = el("a", "back", "← Назад");
+      back.href = "#/";
+      app.appendChild(back);
+
+      if (data.error) {
+        app.appendChild(el("div", "error", "Видео недоступно: " + data.error));
+        return;
+      }
+
+      var wrap = el("div", "player-wrap");
+      var video = el("video");
+      video.controls = true;
+      video.autoplay = true;
+      video.setAttribute("playsinline", "");
+      wrap.appendChild(video);
+      app.appendChild(wrap);
+
+      var stream = pickStream(data.videoStreams || []);
+      var audio = null;
+      if (!stream) {
+        stream = pickMutedVideo(data.videoStreams || []);
+        audio = pickAudio(data.audioStreams);
+        if (stream && audio) video.muted = false;
+      }
+
+      if (!stream) {
+        app.appendChild(el("div", "error",
+          "Для этого видео нет подходящего потока. Попробуйте другое видео."));
+      } else {
+        video.src = stream.url;
+        video.play().catch(function () { /* автозапуск может быть запрещён */ });
+        if (audio) {
+          var a = new Audio(audio.url);
+          a.autoplay = true;
+          a.preload = "auto";
+          var sync = function (force) {
+            if (!a.duration) return;
+            if (force || Math.abs(a.currentTime - video.currentTime) > 0.4) {
+              a.currentTime = video.currentTime;
+            }
+          };
+          video.addEventListener("play", function () { a.play().catch(function () {}); sync(true); });
+          video.addEventListener("pause", function () { a.pause(); });
+          video.addEventListener("seeking", function () { sync(true); });
+          video.addEventListener("timeupdate", function () { sync(false); });
+          video.addEventListener("ratechange", function () { a.playbackRate = video.playbackRate; });
+          video.addEventListener("ended", function () { a.pause(); });
+        }
+      }
+
+      app.appendChild(el("div", "watch-title", data.title || ""));
+      var meta = [];
+      if (data.uploader) meta.push(data.uploader);
+      if (data.views || data.views === 0) meta.push(fmtCount(data.views) + " просмотров");
+      if (data.uploadDate) meta.push(data.uploadDate);
+      app.appendChild(el("div", "watch-meta", meta.join(" • ")));
+
+      if (data.description) {
+        app.appendChild(el("div", "desc", data.description));
+      }
+
+      var rel = (data.relatedStreams || []).filter(function (x) {
+        return x && x.type === "stream" && x.url;
+      });
+      if (rel.length) {
+        app.appendChild(el("h1", null, "Похожие видео"));
+        var row = el("div", "row");
+        for (var i = 0; i < rel.length && i < 12; i++) row.appendChild(card(rel[i]));
+        app.appendChild(row);
+      }
+    }).catch(function (e) {
+      setError("Не удалось получить видео.\n" + e.message);
+    });
+  }
+
+  function route() {
+    var hash = location.hash || "#/";
+    var qIndex = hash.indexOf("?");
+    var path = qIndex >= 0 ? hash.slice(1, qIndex) : hash.slice(1);
+    var query = qIndex >= 0 ? hash.slice(qIndex + 1) : "";
+    var params = {};
+    query.split("&").forEach(function (pair) {
+      if (!pair) return;
+      var kv = pair.split("=");
+      params[decodeURIComponent(kv[0])] = decodeURIComponent(kv.slice(1).join("=") || "");
+    });
+
+    if (path === "/watch" && params.v) {
+      renderWatch(params.v);
+    } else if (path === "/search") {
+      searchInput.value = params.q || "";
+      renderSearch(params.q || "");
+    } else {
+      renderHome();
+    }
+    window.scrollTo(0, 0);
+  }
+
+  searchForm.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var q = searchInput.value.trim();
+    if (!q) return;
+    location.hash = "#/search?q=" + encodeURIComponent(q);
+  });
+
+  window.addEventListener("hashchange", route);
+  route();
+})();
+</script>
+</body>
+</html>
